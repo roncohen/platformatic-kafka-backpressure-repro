@@ -16,6 +16,9 @@ if (!packageName) {
   process.exit(1);
 }
 
+// `packageName` is either `kafka130` or `kafka131` from package.json aliases.
+// Using dynamic import lets the same script load either installed version at runtime
+// without changing any other code in the repro.
 const kafka = await import(packageName);
 const selectedVersion = packageName === 'kafka130' ? '1.30.0' : '1.31.0';
 
