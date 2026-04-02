@@ -5,8 +5,6 @@ This repo is a **small standalone reproduction** of a behavioral difference betw
 - `@platformatic/kafka` **1.30.0**
 - `@platformatic/kafka` **1.31.0**
 
-It contains **no Reflag application code**.
-
 ## Claim
 
 With the same script and the same broker:
