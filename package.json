@@ -1,0 +1,19 @@
+{
+  "name": "platformatic-kafka-backpressure-repro",
+  "private": true,
+  "type": "module",
+  "packageManager": "yarn@4.4.1",
+  "engines": {
+    "node": ">=24.6.0"
+  },
+  "scripts": {
+    "broker:up": "docker compose up -d",
+    "broker:down": "docker compose down -v",
+    "repro:130": "node repro.mjs kafka130",
+    "repro:131": "node repro.mjs kafka131"
+  },
+  "dependencies": {
+    "kafka130": "npm:@platformatic/kafka@1.30.0",
+    "kafka131": "npm:@platformatic/kafka@1.31.0"
+  }
+}
