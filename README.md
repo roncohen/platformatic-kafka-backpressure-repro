@@ -127,19 +127,6 @@ So the issue is not just that buffering is "large" in general. The important par
 
 > `push()` is already signaling backpressure, but `1.31.0` continues fetching and buffering anyway.
 
-## Why this repo is minimal
-
-This repo intentionally excludes:
-
-- databases
-- HTTP servers
-- pipelines/batchers from app code
-- feature flags
-- production brokers
-- production offsets
-
-It only exercises `@platformatic/kafka` consumer stream behavior.
-
 ## Files
 
 - `repro.mjs` — the full repro script
