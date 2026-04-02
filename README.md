@@ -1,20 +1,33 @@
-# `@platformatic/kafka` 1.31 async-iterator backpressure repro
+# `@platformatic/kafka` async-iterator backpressure repro
 
-This is a **standalone minimal reproduction** for the suspected async-iterator backpressure regression between:
+This repo is a **small standalone reproduction** of a behavioral difference between:
 
 - `@platformatic/kafka` **1.30.0**
 - `@platformatic/kafka` **1.31.0**
 
-It does **not** use any Reflag application code.
+It contains **no Reflag application code**.
 
-## What it tries to show
+## Claim
 
-The repro uses:
+With the same script and the same broker:
 
-- one local Kafka broker on `localhost:29092`
-- one topic with one partition
-- a large pre-produced backlog
-- a slow consumer using:
+- **1.30.0** buffers a limited chunk of the backlog
+- **1.31.0** keeps buffering almost the entire backlog
+
+That happens even though:
+
+- the consumer uses `for await (const message of stream)`
+- `highWaterMark=1`
+- `stream.push()` is already returning `false`
+
+## Repro shape
+
+The script does only this:
+
+1. starts a local Kafka broker on `localhost:29092`
+2. creates a 1-partition topic
+3. pre-produces a backlog of messages
+4. starts a **slow** consumer:
 
 ```js
 for await (const message of stream) {
@@ -22,71 +35,35 @@ for await (const message of stream) {
 }
 ```
 
-- `highWaterMark=1`
+It monkey-patches the returned stream instance to count:
 
-It monkey-patches the returned stream instance to count how often `stream.push()` returns `false`.
+- how many times `push()` is called
+- how many times `push()` returns `false`
+- the largest observed `readableLength`
 
-The expected signal is:
+It also logs memory usage (`rssMiB`, `heapUsedMiB`).
 
-- in **1.30.0**, buffering stays much more bounded
-- in **1.31.0**, `push()` starts returning `false` but the consumer keeps fetching anyway, so:
-  - `readableLength` keeps growing
-  - RSS / heap keep growing
+## Quick start
 
-On this machine, with the suggested settings below, the summaries looked like:
-
-- **1.30.0**
-  - `pushFalseCount: 3500`
-  - `maxReadableLength: 3500`
-  - `maxRssMiB: 290.77`
-- **1.31.0**
-  - `pushFalseCount: 20000`
-  - `maxReadableLength: 19971`
-  - `maxRssMiB: 716.52`
-
-That is, with `highWaterMark=1`, 1.31 buffered almost the entire backlog while 1.30 stopped after roughly one large fetch window.
-
-## Prerequisites
+### Prerequisites
 
 - Node **24.6.0** or newer
 - Docker
 - Yarn **4.x**
 
-## Install
+### Install
 
 ```bash
 yarn install
 ```
 
-## Start the broker
+### Start Kafka
 
 ```bash
 yarn broker:up
 ```
 
-Wait until the container is healthy:
-
-```bash
-docker ps
-```
-
-## Run the repro
-
-### `@platformatic/kafka` 1.30.0
-
-```bash
-yarn repro:130
-```
-
-### `@platformatic/kafka` 1.31.0
-
-```bash
-yarn repro:131
-```
-
-## Suggested comparison run
-
-Use the same settings for both runs:
+### Run both versions with the same settings
 
 ```bash
 HIGH_WATER_MARK=1 \
@@ -108,36 +85,68 @@ MAX_BYTES=$((64 * 1024 * 1024)) \
 yarn repro:131
 ```
 
-## Output
+## What to look at
 
-The script prints JSON lines such as:
+Each run prints JSON lines. The most useful line is the final `summary` event.
 
-- `config`
-- `produce:*`
-- `sample`
-- `summary`
-
-Useful fields to compare:
+Compare these fields:
 
 - `pushFalseCount`
-- `readableLength`
 - `maxReadableLength`
-- `readableHighWaterMark`
-- `rssMiB`
-- `heapUsedMiB`
+- `maxRssMiB`
+- `maxHeapUsedMiB`
 
-## Why this is minimal
+## Example result from one run
 
-This repo intentionally avoids:
+Using the settings above, one local run produced:
+
+### 1.30.0
+
+```json
+{"event":"summary","selectedVersion":"1.30.0","producedCount":20000,"consumedCount":564,"pushCalls":3500,"pushFalseCount":3500,"firstPushFalseAtReadableLength":1,"maxReadableLength":3500,"highWaterMark":1,"maxRssMiB":290.77,"maxHeapUsedMiB":74.15}
+```
+
+### 1.31.0
+
+```json
+{"event":"summary","selectedVersion":"1.31.0","producedCount":20000,"consumedCount":554,"pushCalls":20000,"pushFalseCount":20000,"firstPushFalseAtReadableLength":1,"maxReadableLength":19971,"highWaterMark":1,"maxRssMiB":716.52,"maxHeapUsedMiB":346.57}
+```
+
+## Why this looks wrong
+
+With `highWaterMark=1`, backpressure starts immediately:
+
+- `firstPushFalseAtReadableLength` is `1`
+
+But in `1.31.0` the consumer still buffers almost the entire backlog:
+
+- `maxReadableLength` grows to ~`20000`
+- RSS / heap grow much more than in `1.30.0`
+
+So the issue is not just that buffering is "large" in general. The important part is:
+
+> `push()` is already signaling backpressure, but `1.31.0` continues fetching and buffering anyway.
+
+## Why this repo is minimal
+
+This repo intentionally excludes:
 
 - databases
 - HTTP servers
-- batchers
+- pipelines/batchers from app code
 - feature flags
-- app-specific code
-- production offsets or production brokers
+- production brokers
+- production offsets
 
-It only exercises the stream consumer behavior of `@platformatic/kafka`.
+It only exercises `@platformatic/kafka` consumer stream behavior.
+
+## Files
+
+- `repro.mjs` — the full repro script
+- `compose.yaml` — local Kafka broker
+- `package.json` — installs both versions via aliases:
+  - `kafka130` → `@platformatic/kafka@1.30.0`
+  - `kafka131` → `@platformatic/kafka@1.31.0`
 
 ## Cleanup
 
